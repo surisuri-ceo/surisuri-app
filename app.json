@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "수리수리 AI",
+    "slug": "surisuri-app",
+    "version": "1.0.1",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.surisuri2026.surisuriapp",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "카메라를 통해 현장 사진 및 자재 사진을 등록합니다.",
+          "photosPermission": "갤러리에서 사진을 불러와 등록합니다."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3d8bfd47-d0d3-4c75-af22-1c44b42636fa"
+      }
+    }
+  }
+}
