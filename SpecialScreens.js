@@ -1,5 +1,5 @@
 // SpecialScreens.js [1부] - 1~4번 공정 홈 실시간 매칭 연동 완결본
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -19,10 +19,36 @@ import * as ImagePicker from 'expo-image-picker';
 // ==========================================
 export function SimpleLaborScreen({ onBack, onComplete }) {
   const [laborType, setLaborType] = useState('단순운반');
-  const [laborWage, setLaborWage] = useState('130000');
+  const [laborWage, updateLaborWage] = useState('130000');
+  const priceEdited = useRef(false);
+  const setLaborWage = (value) => {
+    priceEdited.current = true;
+    updateLaborWage(value);
+  };
   const [laborAddr, setLaborAddr] = useState('광주광역시 북구 용봉동');
   const [laborDesc, setLaborDesc] = useState('');
-  const [laborPhotos, setLaborPhotos] = useState([]);
+  const [laborPhotos, updateLaborPhotos] = useState([]);
+  const laborPhotosRef = useRef([]);
+  const photoIds = useRef(new Map());
+  const setLaborPhotos = (value) => {
+    const next = typeof value === 'function' ? value(laborPhotosRef.current) : value;
+    laborPhotosRef.current = next;
+    updateLaborPhotos(next);
+  };
+  const addPhotos = (assets) => {
+    const updated = [...laborPhotosRef.current];
+    const seen = new Set(updated.map(uri => photoIds.current.get(uri) || uri));
+    for (const asset of assets) {
+      const key = asset.assetId || asset.uri;
+      if (updated.length >= 5) break;
+      if (seen.has(key) || updated.includes(asset.uri)) continue;
+      seen.add(key);
+      photoIds.current.set(asset.uri, key);
+      updated.push(asset.uri);
+    }
+    setLaborPhotos(updated);
+    return updated;
+  };
   
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [aiModalVisible, setAiModalVisible] = useState(false);
@@ -39,7 +65,7 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
         range: '120,000원 ~ 140,000원',
         recommended: '130000'
       });
-      setLaborWage('130000');
+      if (!priceEdited.current) updateLaborWage('130000');
       setAiVerifyStep('question');
       setAiModalVisible(true);
     }, 800);
@@ -51,8 +77,7 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
 
     const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (!res.canceled && res.assets && res.assets.length > 0) {
-      const updatedPhotos = [...laborPhotos, res.assets[0].uri].slice(0, 5);
-      setLaborPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos([res.assets[0]]);
 
       if (updatedPhotos.length >= 5) {
         Alert.alert('최대 촬영 완료', '최대 5장의 사진이 등록되어 AI 판독을 시작합니다.');
@@ -74,9 +99,7 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
   const handlePickFromGallery = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, allowsMultipleSelection: true });
     if (!res.canceled && res.assets) {
-      const uris = res.assets.map(a => a.uri);
-      const updatedPhotos = [...laborPhotos, ...uris].slice(0, 5);
-      setLaborPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos(res.assets);
       Alert.alert(
         '🖼️ 사진 등록 완료 (' + updatedPhotos.length + '/5장)',
         'AI 작업강도 판독을 시작하시겠습니까?',
@@ -89,14 +112,18 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
   };
 
   const handleFinalSubmit = () => {
-    if (!laborWage.trim()) return Alert.alert('확인', '지급 희망 일당을 입력해 주세요.');
+    const validatedPriceInput = laborWage.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
+    }
 
     // 핀셋 연동: 홈 화면 실시간 매칭현황에 즉시 반영되는 주문 객체 전달
     const newOrder = {
       id: Date.now(),
       tagBadge: '단순인력',
       diagnosis: laborType + ' - ' + (laborDesc || '현장 인력 지원 요청'),
-      price: parseInt(laborWage, 10) || 130000,
+      price: validatedPrice,
       address: laborAddr,
       status: '접수완료',
       photos: laborPhotos
@@ -106,7 +133,7 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
 
     Alert.alert(
       '인력 요청 접수 완료 🚀',
-      '[해당공정: 단순인력]\n일당 ' + Number(laborWage).toLocaleString() + '원으로 관내 전문 인력팀에 실시간 전송되었습니다!'
+      '[해당공정: 단순인력]\n일당 ' + validatedPrice.toLocaleString() + '원으로 관내 전문 인력팀에 실시간 전송되었습니다!'
     );
     setAiModalVisible(false);
   };
@@ -270,10 +297,36 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
 // ==========================================
 export function CleaningScreen({ onBack, onComplete }) {
   const [cleaningType, setCleaningType] = useState('입주/이사청소');
-  const [cleaningWage, setCleaningWage] = useState('250000');
+  const [cleaningWage, updateCleaningWage] = useState('250000');
+  const priceEdited = useRef(false);
+  const setCleaningWage = (value) => {
+    priceEdited.current = true;
+    updateCleaningWage(value);
+  };
   const [cleaningAddr, setCleaningAddr] = useState('광주광역시 북구 용봉동 아파트');
   const [cleaningDesc, setCleaningDesc] = useState('');
-  const [cleaningPhotos, setCleaningPhotos] = useState([]);
+  const [cleaningPhotos, updateCleaningPhotos] = useState([]);
+  const cleaningPhotosRef = useRef([]);
+  const photoIds = useRef(new Map());
+  const setCleaningPhotos = (value) => {
+    const next = typeof value === 'function' ? value(cleaningPhotosRef.current) : value;
+    cleaningPhotosRef.current = next;
+    updateCleaningPhotos(next);
+  };
+  const addPhotos = (assets) => {
+    const updated = [...cleaningPhotosRef.current];
+    const seen = new Set(updated.map(uri => photoIds.current.get(uri) || uri));
+    for (const asset of assets) {
+      const key = asset.assetId || asset.uri;
+      if (updated.length >= 5) break;
+      if (seen.has(key) || updated.includes(asset.uri)) continue;
+      seen.add(key);
+      photoIds.current.set(asset.uri, key);
+      updated.push(asset.uri);
+    }
+    setCleaningPhotos(updated);
+    return updated;
+  };
 
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [aiModalVisible, setAiModalVisible] = useState(false);
@@ -290,7 +343,7 @@ export function CleaningScreen({ onBack, onComplete }) {
         range: '240,000원 ~ 280,000원',
         recommended: '250000'
       });
-      setCleaningWage('250000');
+      if (!priceEdited.current) updateCleaningWage('250000');
       setAiVerifyStep('question');
       setAiModalVisible(true);
     }, 800);
@@ -302,8 +355,7 @@ export function CleaningScreen({ onBack, onComplete }) {
 
     const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (!res.canceled && res.assets && res.assets.length > 0) {
-      const updatedPhotos = [...cleaningPhotos, res.assets[0].uri].slice(0, 5);
-      setCleaningPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos([res.assets[0]]);
 
       if (updatedPhotos.length >= 5) {
         Alert.alert('최대 촬영 완료', '최대 5장의 사진이 등록되어 AI 판독을 시작합니다.');
@@ -325,9 +377,7 @@ export function CleaningScreen({ onBack, onComplete }) {
   const handlePickFromGallery = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, allowsMultipleSelection: true });
     if (!res.canceled && res.assets) {
-      const uris = res.assets.map(a => a.uri);
-      const updatedPhotos = [...cleaningPhotos, ...uris].slice(0, 5);
-      setCleaningPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos(res.assets);
       Alert.alert(
         '🖼️ 사진 등록 완료 (' + updatedPhotos.length + '/5장)',
         'AI 청소 견적 판독을 시작하시겠습니까?',
@@ -340,14 +390,18 @@ export function CleaningScreen({ onBack, onComplete }) {
   };
 
   const handleFinalSubmit = () => {
-    if (!cleaningWage.trim()) return Alert.alert('확인', '지급 희망 견적을 입력해 주세요.');
+    const validatedPriceInput = cleaningWage.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
+    }
 
     // 핀셋 연동: 홈 화면 실시간 매칭현황에 즉시 반영
     const newOrder = {
       id: Date.now(),
       tagBadge: '청소/방역',
       diagnosis: cleaningType + ' - ' + (cleaningDesc || '전문 청소 요청'),
-      price: parseInt(cleaningWage, 10) || 250000,
+      price: validatedPrice,
       address: cleaningAddr,
       status: '접수완료',
       photos: cleaningPhotos
@@ -357,7 +411,7 @@ export function CleaningScreen({ onBack, onComplete }) {
 
     Alert.alert(
       '청소/방역 접수 완료 🚀',
-      '[해당공정: 청소/방역]\n견적 ' + Number(cleaningWage).toLocaleString() + '원으로 관내 전문 청소팀에 실시간 전송되었습니다!'
+      '[해당공정: 청소/방역]\n견적 ' + validatedPrice.toLocaleString() + '원으로 관내 전문 청소팀에 실시간 전송되었습니다!'
     );
     setAiModalVisible(false);
   };
@@ -524,10 +578,36 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
   const [closetType, setClosetType] = useState('typeA');
   const [kitchenWidth, setKitchenWidth] = useState('2600');
   const [kitchenHeight, setKitchenHeight] = useState('2200');
-  const [kitchenPrice, setKitchenPrice] = useState('1750000');
+  const [kitchenPrice, updateKitchenPrice] = useState('1750000');
+  const priceEdited = useRef(false);
+  const setKitchenPrice = (value) => {
+    priceEdited.current = true;
+    updateKitchenPrice(value);
+  };
   const [kitchenAddr, setKitchenAddr] = useState('광주광역시 북구 용봉동');
   const [kitchenDesc, setKitchenDesc] = useState('');
-  const [kitchenPhotos, setKitchenPhotos] = useState([]);
+  const [kitchenPhotos, updateKitchenPhotos] = useState([]);
+  const kitchenPhotosRef = useRef([]);
+  const photoIds = useRef(new Map());
+  const setKitchenPhotos = (value) => {
+    const next = typeof value === 'function' ? value(kitchenPhotosRef.current) : value;
+    kitchenPhotosRef.current = next;
+    updateKitchenPhotos(next);
+  };
+  const addPhotos = (assets) => {
+    const updated = [...kitchenPhotosRef.current];
+    const seen = new Set(updated.map(uri => photoIds.current.get(uri) || uri));
+    for (const asset of assets) {
+      const key = asset.assetId || asset.uri;
+      if (updated.length >= 5) break;
+      if (seen.has(key) || updated.includes(asset.uri)) continue;
+      seen.add(key);
+      photoIds.current.set(asset.uri, key);
+      updated.push(asset.uri);
+    }
+    setKitchenPhotos(updated);
+    return updated;
+  };
 
   const [isAiCalculating, setIsAiCalculating] = useState(false);
   const [aiModalVisible, setAiModalVisible] = useState(false);
@@ -540,8 +620,7 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
 
     const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (!res.canceled && res.assets && res.assets.length > 0) {
-      const updatedPhotos = [...kitchenPhotos, res.assets[0].uri].slice(0, 5);
-      setKitchenPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos([res.assets[0]]);
       Alert.alert(
         '📷 실측 사진 등록 완료 (' + updatedPhotos.length + '/5장)',
         '입력하신 치수와 등록된 사진으로 AI 맞춤 견적을 산출하시겠습니까?',
@@ -556,9 +635,7 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
   const handlePickFromGallery = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, allowsMultipleSelection: true });
     if (!res.canceled && res.assets) {
-      const uris = res.assets.map(a => a.uri);
-      const updatedPhotos = [...kitchenPhotos, ...uris].slice(0, 5);
-      setKitchenPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos(res.assets);
       handleCalculateAiQuote(updatedPhotos);
     }
   };
@@ -622,31 +699,42 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
         range: minPrice.toLocaleString() + '원 ~ ' + maxPrice.toLocaleString() + '원',
         recommended: String(baseRec)
       });
-      setKitchenPrice(String(baseRec));
+      if (!priceEdited.current) updateKitchenPrice(String(baseRec));
       setAiVerifyStep('question');
       setAiModalVisible(true);
     }, 600);
   };
 
   const handleFinalSubmit = () => {
-    if (!kitchenPrice.trim()) return Alert.alert('확인', '희망 견적 금액을 입력해 주세요.');
+    const validatedPriceInput = kitchenPrice.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
+    }
 
     // 핀셋 연동: 홈 화면 실시간 매칭현황에 즉시 반영
     const newOrder = {
       id: Date.now(),
       tagBadge: '싱크대/가구',
-      diagnosis: itemType + ' 맞춤 제작 및 시공 (' + kitchenWidth + 'mm)',
-      price: parseInt(kitchenPrice, 10) || 1750000,
+      diagnosis: itemType + ' 맞춤 제작 및 시공 (' + kitchenWidth + 'mm)' + (kitchenDesc.trim() ? '\n' + kitchenDesc : ''),
+      price: validatedPrice,
       address: kitchenAddr,
       status: '접수완료',
-      photos: kitchenPhotos
+      photos: kitchenPhotos,
+      details: {
+        itemType,
+        kitchenWidth,
+        kitchenHeight,
+        closetType,
+        kitchenDesc
+      }
     };
 
     if (onComplete) onComplete(newOrder);
 
     Alert.alert(
       '싱크대/가구 매칭 호출 완료 🚀',
-      '[해당공정: 싱크대/가구]\n몸통 PB 15mm / 도어 UV 18mm / 인조대리석 스펙으로\n희망금액 ' + Number(kitchenPrice).toLocaleString() + '원이 관내 전문 제작업체 및 시공마스터에 실시간 전송되었습니다!'
+      '[해당공정: 싱크대/가구]\n몸통 PB 15mm / 도어 UV 18mm / 인조대리석 스펙으로\n희망금액 ' + validatedPrice.toLocaleString() + '원이 관내 전문 제작업체 및 시공마스터에 실시간 전송되었습니다!'
     );
     setAiModalVisible(false);
   };
@@ -872,9 +960,35 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
 export function MovingDeliveryScreen({ onBack, onComplete }) {
   const [loadAddr, setLoadAddr] = useState('광주광역시 북구 용봉동 101동 (출발지)');
   const [unloadAddr, setUnloadAddr] = useState('광주광역시 서구 치평동 202동 (도착지)');
-  const [movingWage, setMovingWage] = useState('220000');
+  const [movingWage, updateMovingWage] = useState('220000');
+  const priceEdited = useRef(false);
+  const setMovingWage = (value) => {
+    priceEdited.current = true;
+    updateMovingWage(value);
+  };
   const [movingDesc, setMovingDesc] = useState('');
-  const [movingPhotos, setMovingPhotos] = useState([]);
+  const [movingPhotos, updateMovingPhotos] = useState([]);
+  const movingPhotosRef = useRef([]);
+  const photoIds = useRef(new Map());
+  const setMovingPhotos = (value) => {
+    const next = typeof value === 'function' ? value(movingPhotosRef.current) : value;
+    movingPhotosRef.current = next;
+    updateMovingPhotos(next);
+  };
+  const addPhotos = (assets) => {
+    const updated = [...movingPhotosRef.current];
+    const seen = new Set(updated.map(uri => photoIds.current.get(uri) || uri));
+    for (const asset of assets) {
+      const key = asset.assetId || asset.uri;
+      if (updated.length >= 5) break;
+      if (seen.has(key) || updated.includes(asset.uri)) continue;
+      seen.add(key);
+      photoIds.current.set(asset.uri, key);
+      updated.push(asset.uri);
+    }
+    setMovingPhotos(updated);
+    return updated;
+  };
 
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [aiModalVisible, setAiModalVisible] = useState(false);
@@ -891,7 +1005,7 @@ export function MovingDeliveryScreen({ onBack, onComplete }) {
         range: '190,000원 ~ 250,000원',
         recommended: '220000'
       });
-      setMovingWage('220000');
+      if (!priceEdited.current) updateMovingWage('220000');
       setAiVerifyStep('question');
       setAiModalVisible(true);
     }, 800);
@@ -903,8 +1017,7 @@ export function MovingDeliveryScreen({ onBack, onComplete }) {
 
     const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (!res.canceled && res.assets && res.assets.length > 0) {
-      const updatedPhotos = [...movingPhotos, res.assets[0].uri].slice(0, 5);
-      setMovingPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos([res.assets[0]]);
 
       if (updatedPhotos.length >= 5) {
         Alert.alert('최대 촬영 완료', '등록된 사진으로 AI 이사 물량 판독을 시작합니다.');
@@ -926,32 +1039,39 @@ export function MovingDeliveryScreen({ onBack, onComplete }) {
   const handlePickFromGallery = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.8, allowsMultipleSelection: true });
     if (!res.canceled && res.assets) {
-      const uris = res.assets.map(a => a.uri);
-      const updatedPhotos = [...movingPhotos, ...uris].slice(0, 5);
-      setMovingPhotos(updatedPhotos);
+      const updatedPhotos = addPhotos(res.assets);
       runAiDiagnosis(updatedPhotos);
     }
   };
 
   const handleFinalSubmit = () => {
-    if (!movingWage.trim()) return Alert.alert('확인', '희망 운송 금액을 입력해 주세요.');
+    const validatedPriceInput = movingWage.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
+    }
 
     // 핀셋 연동: 홈 화면 실시간 매칭현황에 즉시 반영
     const newOrder = {
       id: Date.now(),
       tagBadge: '이사/배송',
-      diagnosis: '용달 화물 운송 (' + loadAddr + ' ➔ ' + unloadAddr + ')',
-      price: parseInt(movingWage, 10) || 220000,
+      diagnosis: '용달 화물 운송 (' + loadAddr + ' ➔ ' + unloadAddr + ')' + (movingDesc.trim() ? '\n' + movingDesc : ''),
+      price: validatedPrice,
       address: loadAddr,
       status: '배차요청',
-      photos: movingPhotos
+      photos: movingPhotos,
+      details: {
+        movingDesc,
+        loadAddr,
+        unloadAddr
+      }
     };
 
     if (onComplete) onComplete(newOrder);
 
     Alert.alert(
       '이사/배송 접수 완료 🚀',
-      '[해당공정: 이사/배송]\n상차지: ' + loadAddr + '\n도착지: ' + unloadAddr + '\n희망금액 ' + Number(movingWage).toLocaleString() + '원으로 관내 기사님들께 실시간 배차 호출되었습니다!'
+      '[해당공정: 이사/배송]\n상차지: ' + loadAddr + '\n도착지: ' + unloadAddr + '\n희망금액 ' + validatedPrice.toLocaleString() + '원으로 관내 기사님들께 실시간 배차 호출되었습니다!'
     );
     setAiModalVisible(false);
   };
@@ -1791,8 +1911,10 @@ export function UsedMarketScreen({ onBack }) {
   };
 
   const handlePublish = () => {
-    if (modalMode === 'sell' && !itemPrice.trim()) {
-      return Alert.alert('확인', '판매 희망 금액을 입력해 주세요.');
+    const validatedPriceInput = itemPrice.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (modalMode !== 'give' && (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0)) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
     }
     if (!itemTitle.trim()) {
       return Alert.alert('확인', '물품명을 입력해 주세요.');
@@ -1801,7 +1923,7 @@ export function UsedMarketScreen({ onBack }) {
     const newPost = {
       id: Date.now(),
       title: modalMode === 'give' ? `[나눔] ${itemTitle}` : itemTitle,
-      price: modalMode === 'give' ? 0 : parseInt(itemPrice, 10) || 100000,
+      price: modalMode === 'give' ? 0 : validatedPrice,
       isFree: modalMode === 'give',
       sellerName: '용봉동이웃',
       mannerTemp: '36.5℃',
@@ -2242,15 +2364,26 @@ export function SurplusClearanceScreen({ onBack }) {
   };
 
   const handlePublishClearance = () => {
-    if (!formPrice.trim() || !formTitle.trim()) {
+    if (!formTitle.trim()) {
       return Alert.alert('확인', '품목명과 헐값 급처 금액을 입력해 주세요.');
+    }
+
+    const validatedPriceInput = formPrice.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
+    }
+    const regularPriceInput = formRegularPrice.trim();
+    const regularPrice = regularPriceInput ? Number(regularPriceInput.replace(/,/g, '')) : validatedPrice * 2;
+    if ((regularPriceInput && !/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(regularPriceInput)) || !Number.isSafeInteger(regularPrice) || regularPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
     }
 
     const newPost = {
       id: Date.now(),
       title: formTitle,
-      price: parseInt(formPrice, 10) || 50000,
-      regularPrice: parseInt(formRegularPrice, 10) || parseInt(formPrice, 10) * 2,
+      price: validatedPrice,
+      regularPrice: regularPrice,
       sellerName: '용봉동현장소장',
       mannerTemp: '36.8℃',
       tel: '010-1234-5678',

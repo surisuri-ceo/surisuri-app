@@ -1,5 +1,5 @@
 // HomeScreen.js - 자재마켓 아이콘 쇼핑카트(🛒) 및 실시간 매칭현황 핀셋 반영 완전체
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -37,7 +37,28 @@ export default function HomeScreen({
   const [askMoreModalVisible, setAskMoreModalVisible] = useState(false);
   const [aiFlowModalVisible, setAiFlowModalVisible] = useState(false);
 
-  const [capturedPhotos, setCapturedPhotos] = useState([]);
+  const [capturedPhotos, updateCapturedPhotos] = useState([]);
+  const capturedPhotosRef = useRef([]);
+  const photoIds = useRef(new Map());
+  const setCapturedPhotos = (value) => {
+    const next = typeof value === 'function' ? value(capturedPhotosRef.current) : value;
+    capturedPhotosRef.current = next;
+    updateCapturedPhotos(next);
+  };
+  const addPhotos = (assets) => {
+    const updated = [...capturedPhotosRef.current];
+    const seen = new Set(updated.map(uri => photoIds.current.get(uri) || uri));
+    for (const asset of assets) {
+      const key = asset.assetId || asset.uri;
+      if (updated.length >= 5) break;
+      if (seen.has(key) || updated.includes(asset.uri)) continue;
+      seen.add(key);
+      photoIds.current.set(asset.uri, key);
+      updated.push(asset.uri);
+    }
+    setCapturedPhotos(updated);
+    return updated;
+  };
   const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
   const [aiStep, setAiStep] = useState('question');
 
@@ -48,11 +69,21 @@ export default function HomeScreen({
     recommended: '55000'
   });
 
-  const [customDesc, setCustomDesc] = useState('');
-  const [finalPrice, setFinalPrice] = useState('55000');
+  const [customDesc, updateCustomDesc] = useState('');
+  const descriptionEdited = useRef(false);
+  const setCustomDesc = (value) => {
+    descriptionEdited.current = true;
+    updateCustomDesc(value);
+  };
+  const [finalPrice, updateFinalPrice] = useState('55000');
+  const priceEdited = useRef(false);
+  const setFinalPrice = (value) => {
+    priceEdited.current = true;
+    updateFinalPrice(value);
+  };
   const [finalAddr, setFinalAddr] = useState(currentRegionDisplay || '광주광역시 북구 용봉동');
 
-  const handleCameraCapture = async (currentList = capturedPhotos) => {
+  const handleCameraCapture = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('권한 필요', '카메라 접근 권한을 허용해 주세요.');
@@ -61,15 +92,13 @@ export default function HomeScreen({
 
     const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
     if (!res.canceled && res.assets && res.assets.length > 0) {
-      const newUri = res.assets[0].uri;
-      const updated = [...currentList, newUri].slice(0, 5);
-      setCapturedPhotos(updated);
+      const updated = addPhotos([res.assets[0]]);
 
       if (updated.length < 3) {
         Alert.alert(
           `📷 촬영 완료 (${updated.length}/5장)`,
           '각도를 다르게 찍어 주세요. (연속 최소 3장 촬영 필수)',
-          [{ text: '다음 각도 촬영하기', onPress: () => handleCameraCapture(updated) }]
+          [{ text: '다음 각도 촬영하기', onPress: () => handleCameraCapture() }]
         );
       } else if (updated.length >= 5) {
         Alert.alert('촬영 완료', '최대 5장 촬영이 완료되어 AI 판독을 시작합니다.', [
@@ -88,16 +117,14 @@ export default function HomeScreen({
     });
 
     if (!res.canceled && res.assets && res.assets.length > 0) {
-      const uris = res.assets.map(a => a.uri);
-      const updated = [...capturedPhotos, ...uris].slice(0, 5);
-      setCapturedPhotos(updated);
+      const updated = addPhotos(res.assets);
 
       if (updated.length < 3) {
         Alert.alert(
           '사진 부족 (최소 3장)',
           `현재 ${updated.length}장이 등록되었습니다. 정확한 AI 진단을 위해 최소 3장 이상 필요합니다.`,
           [
-            { text: '📷 카메라로 추가 촬영', onPress: () => handleCameraCapture(updated) },
+            { text: '📷 카메라로 추가 촬영', onPress: () => handleCameraCapture() },
             { text: '🖼️ 갤러리 다시 선택', onPress: handleGalleryPick }
           ]
         );
@@ -116,22 +143,23 @@ export default function HomeScreen({
 
     setTimeout(() => {
       setIsAiAnalyzing(false);
-      setFinalPrice('55000');
-      setCustomDesc('싱크대 배관 누수 부품 교체 및 패킹 보강 작업');
+      if (!priceEdited.current) updateFinalPrice('55000');
+      if (!descriptionEdited.current) updateCustomDesc('싱크대 배관 누수 부품 교체 및 패킹 보강 작업');
     }, 1200);
   };
 
   const handleFinalMatching = () => {
-    if (!finalPrice.trim()) {
-      Alert.alert('확인', '희망 수리 금액을 입력해 주세요.');
-      return;
+    const validatedPriceInput = finalPrice.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
     }
 
     if (onAddOrder) {
       onAddOrder({
         category: aiResult.category,
         title: customDesc || aiResult.title,
-        price: parseInt(finalPrice, 10) || 55000,
+        price: validatedPrice,
         address: finalAddr,
         photos: capturedPhotos
       });
@@ -144,7 +172,9 @@ export default function HomeScreen({
 
     setAiFlowModalVisible(false);
     setCapturedPhotos([]);
-    setCustomDesc('');
+    updateCustomDesc('');
+    descriptionEdited.current = false;
+    priceEdited.current = false;
   };
 
   return (

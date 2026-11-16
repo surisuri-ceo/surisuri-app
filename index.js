@@ -113,16 +113,25 @@ export default function App() {
 
   const handleAddOrder = (newOrder) => {
     const createdItem = {
-      id: Date.now(),
+      id: newOrder.id ?? `request-${Date.now()}`,
       tagBadge: newOrder.tagBadge || newOrder.category || '일반수리',
       diagnosis: newOrder.diagnosis || newOrder.title,
       price: newOrder.price,
       address: newOrder.address || currentUser.region,
-      status: '접수완료',
+      status: newOrder.status ?? '접수완료',
       isMyPost: true,
-      photos: newOrder.photos || []
+      photos: newOrder.photos || [],
+      details: newOrder.details
     };
-    setRequestList([createdItem, ...requestList]);
+    setRequestList(prev => {
+      const usedIds = new Set(prev.map(item => String(item.id)));
+      let id = createdItem.id;
+      let suffix = 1;
+      while (usedIds.has(String(id))) {
+        id = `${createdItem.id}-${suffix++}`;
+      }
+      return [{ ...createdItem, id }, ...prev];
+    });
   };
 
   const handleDeletePost = (id) => {
@@ -132,7 +141,7 @@ export default function App() {
         text: '삭제하기',
         style: 'destructive',
         onPress: () => {
-          setRequestList(requestList.filter((item) => item.id !== id));
+          setRequestList(prev => prev.filter((item) => item.id !== id));
           Alert.alert('삭제 완료', '수리 요청글이 삭제되었습니다.');
         }
       }
@@ -147,17 +156,18 @@ export default function App() {
   };
 
   const handleSavePostEdit = () => {
-    if (!editPostPrice.trim()) {
-      Alert.alert('확인', '희망 금액을 입력해 주세요.');
-      return;
+    const validatedPriceInput = editPostPrice.trim();
+    const validatedPrice = Number(validatedPriceInput.replace(/,/g, ''));
+    if (!/^(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)$/.test(validatedPriceInput) || !Number.isSafeInteger(validatedPrice) || validatedPrice <= 0) {
+      return Alert.alert('확인', '금액은 0보다 큰 정수로 입력해 주세요. (예: 55000 또는 55,000)');
     }
-    setRequestList(
-      requestList.map((item) => {
+    setRequestList(prev =>
+      prev.map((item) => {
         if (item.id === editingPostId) {
           return {
             ...item,
             diagnosis: editPostTitle,
-            price: parseInt(editPostPrice, 10) || item.price
+            price: validatedPrice
           };
         }
         return item;
