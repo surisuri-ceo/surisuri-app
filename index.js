@@ -1,5 +1,8 @@
 ﻿// index.js - 4대 공정 실시간 매칭현황 즉각 연동 완결본
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { supabase } from './supabase';
 import {
   StyleSheet,
   Text,
@@ -15,6 +18,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 
 import HomeScreen from './HomeScreen';
+import { normalizeField, normalizeRegion, normalizeProviderFields, normalizeActivityRadius } from './utils/callMatching';
+import CallDetailScreen from './CallDetailScreen';
 import {
   LandingScreen,
   CustomerAuthSelectScreen,
@@ -33,11 +38,76 @@ import {
   SurplusClearanceScreen
 } from './SpecialScreens';
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function App() {
   const [currentTab, setCurrentTab] = useState('home');
   const [activeScreen, setActiveScreen] = useState('home');
   const [authStep, setAuthStep] = useState('landing');
   const [chosenSocialMethod, setChosenSocialMethod] = useState('카카오');
+  const googleAuthInProgress = useRef(false);
+
+  const handleSelectAuthMethod = async (method) => {
+    if (googleAuthInProgress.current) return;
+    if (method !== 'Google') {
+      setChosenSocialMethod(method);
+      setAuthStep('customer_form');
+      return;
+    }
+
+    googleAuthInProgress.current = true;
+    let stage = 'authentication';
+    try {
+      const redirectTo = 'surisuri-app://auth/callback';
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error || !data?.url) throw new Error('OAuth start failed');
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type === 'cancel' || result.type === 'dismiss') {
+        Alert.alert('Google 로그인 취소', '인증을 취소했습니다. 다시 시도할 수 있습니다.');
+        return;
+      }
+      if (result.type !== 'success' || typeof result.url !== 'string') {
+        throw new Error('OAuth response failed');
+      }
+
+      const callback = Linking.parse(result.url);
+      const params = callback.queryParams || {};
+      if (result.url.split(/[?#]/)[0] !== redirectTo ||
+          callback.scheme !== 'surisuri-app' || params.error || params.error_description ||
+          typeof params.code !== 'string' || !params.code.trim() ||
+          params.access_token || params.refresh_token || result.url.includes('#')) {
+        throw new Error('Invalid PKCE callback');
+      }
+
+      stage = 'session';
+      const { data: exchanged, error: exchangeError } =
+        await supabase.auth.exchangeCodeForSession(params.code);
+      if (exchangeError || !exchanged?.session?.user?.id) {
+        throw new Error('Session exchange failed');
+      }
+      const { data: stored, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !stored?.session?.access_token ||
+          stored.session.user?.id !== exchanged.session.user.id) {
+        throw new Error('Session verification failed');
+      }
+
+      setChosenSocialMethod('Google');
+      setAuthStep(previous => previous === 'customer_auth_select' ? 'customer_form' : previous);
+    } catch {
+      Alert.alert(
+        stage === 'session' ? 'Google 로그인 세션 오류' : 'Google 인증 실패',
+        stage === 'session'
+          ? '로그인 세션을 생성하거나 확인하지 못했습니다. 다시 시도해 주세요.'
+          : 'Google 인증을 완료하지 못했습니다. 연결 및 리디렉션 설정을 확인해 주세요.'
+      );
+    } finally {
+      googleAuthInProgress.current = false;
+    }
+  };
 
   const [currentUser, setCurrentUser] = useState({
     name: '서한영',
@@ -111,11 +181,39 @@ export default function App() {
   const [editPostTitle, setEditPostTitle] = useState('');
   const [editPostPrice, setEditPostPrice] = useState('');
 
+  const [selectedCallId, setSelectedCallId] = useState(null);
+  const isProvider = currentUser.role === 'tech' || currentUser.role === 'company';
+  const hasUserId = (typeof currentUser.id === 'string' && currentUser.id.trim() !== '') ||
+    (typeof currentUser.id === 'number' && Number.isFinite(currentUser.id));
+  const incomingCalls = isProvider && hasUserId
+    ? requestList.filter(request => Array.isArray(request.recipientIds) && request.recipientIds.includes(currentUser.id))
+    : [];
+  const incomingCallCount = incomingCalls.length;
+  const selectedCall = incomingCalls.find(request => request.id === selectedCallId);
+  const handleOpenMyCalls = () => {
+    if (currentUser.role !== 'tech' && currentUser.role !== 'company') return;
+    setCurrentTab('home');
+    setActiveScreen('incoming_calls');
+  };
+
+  const handleOpenCallDetail = (id) => {
+    if (!incomingCalls.some(request => request.id === id)) return;
+    setSelectedCallId(id);
+    setCurrentTab('home');
+    setActiveScreen('call_detail');
+  };
+
   const handleAddOrder = (newOrder) => {
     const createdItem = {
       id: newOrder.id ?? `request-${Date.now()}`,
       tagBadge: newOrder.tagBadge || newOrder.category || '일반수리',
+      ...normalizeField(newOrder.tagBadge || newOrder.category || '일반수리'),
+      regionCode: normalizeRegion(newOrder.address || currentUser.region),
       diagnosis: newOrder.diagnosis || newOrder.title,
+      customerRequest: newOrder.customerRequest ?? newOrder.diagnosis ?? newOrder.title,
+      aiDiagnosis: newOrder.aiDiagnosis ?? null,
+      aiPricing: newOrder.aiPricing ?? null,
+      recipientIds: Array.isArray(newOrder.recipientIds) ? newOrder.recipientIds : [],
       price: newOrder.price,
       address: newOrder.address || currentUser.region,
       status: newOrder.status ?? '접수완료',
@@ -167,6 +265,7 @@ export default function App() {
           return {
             ...item,
             diagnosis: editPostTitle,
+            customerRequest: editPostTitle,
             price: validatedPrice
           };
         }
@@ -185,7 +284,8 @@ export default function App() {
     setCurrentUser({
       ...currentUser,
       name: editName,
-      region: editRegion
+      region: editRegion,
+      regionCode: normalizeRegion(editRegion)
     });
     setIsEditProfileModal(false);
     Alert.alert('저장 완료', '내 정보가 성공적으로 변경되었습니다.');
@@ -204,9 +304,46 @@ export default function App() {
                 currentRegionDisplay={currentUser.region}
                 requestList={requestList}
                 currentUser={currentUser}
+                incomingCallCount={incomingCallCount}
+                onOpenMyCalls={handleOpenMyCalls}
                 onOpenAuth={() => setAuthStep('landing')}
                 onNavigate={(screenKey) => setActiveScreen(screenKey)}
                 onAddOrder={handleAddOrder}
+              />
+            )}
+            {activeScreen === 'incoming_calls' && (currentUser.role === 'tech' || currentUser.role === 'company') && (
+              <View style={s.pageContainer}>
+                <View style={s.headerBar}>
+                  <Text style={s.headerTitle}>내게 온 콜</Text>
+                  <Text style={s.lightSubText}>총 {incomingCallCount}건</Text>
+                </View>
+                <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 16 }}>
+                  <Text style={s.boldSubText}>콜 목록</Text>
+                  {incomingCalls.length === 0 ? (
+                    <View style={s.emptyPostCard}>
+                      <Text style={s.emptyPostText}>아직 도착한 콜이 없습니다</Text>
+                    </View>
+                  ) : incomingCalls.map(call => (
+                    <TouchableOpacity
+                      key={call.id}
+                      accessibilityRole="button"
+                      onPress={() => handleOpenCallDetail(call.id)}
+                      style={[s.emptyPostCard, { alignItems: 'stretch', marginBottom: 10, paddingHorizontal: 14 }]}
+                    >
+                      <Text style={s.boldSubText}>{typeof call.customerRequest === 'string' ? call.customerRequest : call.diagnosis}</Text>
+                      <Text style={s.lightSubText}>고객 희망 금액: {Number(call.price).toLocaleString()}원</Text>
+                      <Text style={s.lightSubText}>{call.address}</Text>
+                      <Text style={s.lightSubText}>{call.status}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+            {activeScreen === 'call_detail' && isProvider && (
+              <CallDetailScreen
+                key={selectedCallId}
+                request={selectedCall}
+                onBack={handleOpenMyCalls}
               />
             )}
             {/* 4대 공정 완료 시 handleAddOrder 자동 호출 및 홈 이동 라우팅 핀셋 적용 */}
@@ -559,10 +696,7 @@ export default function App() {
 
         {authStep === 'customer_auth_select' && (
           <CustomerAuthSelectScreen
-            onSelectMethod={(method) => {
-              setChosenSocialMethod(method);
-              setAuthStep('customer_form');
-            }}
+            onSelectMethod={handleSelectAuthMethod}
             onBack={() => setAuthStep('landing')}
           />
         )}
@@ -575,8 +709,11 @@ export default function App() {
                 ...currentUser,
                 name: data.nickname || data.realName,
                 region: data.address,
+                regionCode: normalizeRegion(data.address),
                 role: 'customer'
               });
+              setCurrentTab('home');
+              setActiveScreen('home');
               setAuthStep(null);
             }}
             onBack={() => setAuthStep('customer_auth_select')}
@@ -591,8 +728,16 @@ export default function App() {
                 ...currentUser,
                 name: data.techName,
                 region: data.techRegion,
+                primaryField: data.primaryField,
+                secondaryFields: data.secondaryFields,
+                ...normalizeProviderFields(data.primaryField, data.secondaryFields),
+                regionCode: normalizeRegion(data.techRegion),
+                techRadius: data.techRadius,
+                activityRadius: normalizeActivityRadius(data.techRadius),
                 role: authStep
               });
+              setCurrentTab('home');
+              setActiveScreen('incoming_calls');
               setAuthStep(null);
             }}
             onBack={() => setAuthStep('landing')}

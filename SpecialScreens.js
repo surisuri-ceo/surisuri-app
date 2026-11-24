@@ -75,7 +75,7 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert('권한 필요', '카메라 권한을 허용해 주세요.');
 
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.8, cameraType: ImagePicker.CameraType.back });
     if (!res.canceled && res.assets && res.assets.length > 0) {
       const updatedPhotos = addPhotos([res.assets[0]]);
 
@@ -126,6 +126,9 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
       price: validatedPrice,
       address: laborAddr,
       status: '접수완료',
+      customerRequest: laborType + ' - ' + (laborDesc || '현장 인력 지원 요청'),
+      aiDiagnosis: aiResult ? { title: aiResult.title, description: aiResult.specs || '' } : null,
+      aiPricing: aiResult ? { range: aiResult.range, recommended: aiResult.recommended } : null,
       photos: laborPhotos
     };
 
@@ -226,6 +229,11 @@ export function SimpleLaborScreen({ onBack, onComplete }) {
 
             {aiVerifyStep === 'question' && (
               <View style={{ marginTop: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  {laborPhotos.map((uri, idx) => (
+                    <Image key={idx} source={{ uri }} style={s.photoThumb} />
+                  ))}
+                </ScrollView>
                 <Text style={{ fontSize: 14.5, fontWeight: 'bold', color: '#111827', textAlign: 'center', marginBottom: 14 }}>
                   ❓ AI가 판독한 위 작업 내용이 맞습니까?
                 </Text>
@@ -353,7 +361,7 @@ export function CleaningScreen({ onBack, onComplete }) {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert('권한 필요', '카메라 권한을 허용해 주세요.');
 
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.8, cameraType: ImagePicker.CameraType.back });
     if (!res.canceled && res.assets && res.assets.length > 0) {
       const updatedPhotos = addPhotos([res.assets[0]]);
 
@@ -404,6 +412,9 @@ export function CleaningScreen({ onBack, onComplete }) {
       price: validatedPrice,
       address: cleaningAddr,
       status: '접수완료',
+      customerRequest: cleaningType + ' - ' + (cleaningDesc || '전문 청소 요청'),
+      aiDiagnosis: aiResult ? { title: aiResult.title, description: aiResult.specs || '' } : null,
+      aiPricing: aiResult ? { range: aiResult.range, recommended: aiResult.recommended } : null,
       photos: cleaningPhotos
     };
 
@@ -504,6 +515,11 @@ export function CleaningScreen({ onBack, onComplete }) {
 
             {aiVerifyStep === 'question' && (
               <View style={{ marginTop: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  {cleaningPhotos.map((uri, idx) => (
+                    <Image key={idx} source={{ uri }} style={s.photoThumb} />
+                  ))}
+                </ScrollView>
                 <Text style={{ fontSize: 14.5, fontWeight: 'bold', color: '#111827', textAlign: 'center', marginBottom: 14 }}>
                   ❓ AI가 판독한 위 청소 범위가 맞습니까?
                 </Text>
@@ -618,7 +634,7 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert('권한 필요', '카메라 권한을 허용해 주세요.');
 
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.8, cameraType: ImagePicker.CameraType.back });
     if (!res.canceled && res.assets && res.assets.length > 0) {
       const updatedPhotos = addPhotos([res.assets[0]]);
       Alert.alert(
@@ -720,6 +736,9 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
       price: validatedPrice,
       address: kitchenAddr,
       status: '접수완료',
+      customerRequest: itemType + ' 맞춤 제작 및 시공 (' + kitchenWidth + 'mm)' + (kitchenDesc.trim() ? '\n' + kitchenDesc : ''),
+      aiDiagnosis: aiCalculatedResult ? { title: aiCalculatedResult.title, description: aiCalculatedResult.specs || '' } : null,
+      aiPricing: aiCalculatedResult ? { range: aiCalculatedResult.range, recommended: aiCalculatedResult.recommended } : null,
       photos: kitchenPhotos,
       details: {
         itemType,
@@ -888,6 +907,11 @@ export function FurnitureKitchenScreen({ onBack, onComplete }) {
 
             {aiVerifyStep === 'question' && (
               <View style={{ marginTop: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  {kitchenPhotos.map((uri, idx) => (
+                    <Image key={idx} source={{ uri }} style={s.photoThumb} />
+                  ))}
+                </ScrollView>
                 <Text style={{ fontSize: 14.5, fontWeight: 'bold', color: '#111827', textAlign: 'center', marginBottom: 14 }}>
                   ❓ AI가 산출한 위 맞춤 스펙 및 견적이 맞습니까?
                 </Text>
@@ -1015,7 +1039,7 @@ export function MovingDeliveryScreen({ onBack, onComplete }) {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert('권한 필요', '카메라 권한을 허용해 주세요.');
 
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.8, cameraType: ImagePicker.CameraType.back });
     if (!res.canceled && res.assets && res.assets.length > 0) {
       const updatedPhotos = addPhotos([res.assets[0]]);
 
@@ -1059,6 +1083,9 @@ export function MovingDeliveryScreen({ onBack, onComplete }) {
       price: validatedPrice,
       address: loadAddr,
       status: '배차요청',
+      customerRequest: '용달 화물 운송 (' + loadAddr + ' ➔ ' + unloadAddr + ')' + (movingDesc.trim() ? '\n' + movingDesc : ''),
+      aiDiagnosis: aiResult ? { title: aiResult.title, description: aiResult.specs || '' } : null,
+      aiPricing: aiResult ? { range: aiResult.range, recommended: aiResult.recommended } : null,
       photos: movingPhotos,
       details: {
         movingDesc,
@@ -1161,6 +1188,11 @@ export function MovingDeliveryScreen({ onBack, onComplete }) {
 
             {aiVerifyStep === 'question' && (
               <View style={{ marginTop: 12 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  {movingPhotos.map((uri, idx) => (
+                    <Image key={idx} source={{ uri }} style={s.photoThumb} />
+                  ))}
+                </ScrollView>
                 <Text style={{ fontSize: 14.5, fontWeight: 'bold', color: '#111827', textAlign: 'center', marginBottom: 14 }}>
                   ❓ AI가 판독한 위 운송 물량이 맞습니까?
                 </Text>

@@ -31,7 +31,9 @@ export default function HomeScreen({
   onNavigate,
   onAddOrder,
   currentUser,
-  onOpenAuth
+  onOpenAuth,
+  incomingCallCount = 0,
+  onOpenMyCalls
 }) {
   const [methodModalVisible, setMethodModalVisible] = useState(false);
   const [askMoreModalVisible, setAskMoreModalVisible] = useState(false);
@@ -90,7 +92,7 @@ export default function HomeScreen({
       return;
     }
 
-    const res = await ImagePicker.launchCameraAsync({ quality: 0.8 });
+    const res = await ImagePicker.launchCameraAsync({ quality: 0.8, cameraType: ImagePicker.CameraType.back });
     if (!res.canceled && res.assets && res.assets.length > 0) {
       const updated = addPhotos([res.assets[0]]);
 
@@ -161,6 +163,9 @@ export default function HomeScreen({
         title: customDesc || aiResult.title,
         price: validatedPrice,
         address: finalAddr,
+        customerRequest: customDesc || aiResult.title,
+        aiDiagnosis: { title: aiResult.title, description: '' },
+        aiPricing: { range: aiResult.range, recommended: aiResult.recommended },
         photos: capturedPhotos
       });
     }
@@ -200,6 +205,18 @@ export default function HomeScreen({
       </View>
 
       <ScrollView contentContainerStyle={s.scrollBody} showsVerticalScrollIndicator={false}>
+        {(currentUser?.role === 'tech' || currentUser?.role === 'company') && (
+          <View style={{ alignItems: 'flex-end', paddingTop: 8 }}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel={`내게 온 콜 ${incomingCallCount}건`}
+              onPress={onOpenMyCalls}
+              style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 16, backgroundColor: '#eff6ff' }}
+            >
+              <Text style={s.regionPillText}>📞 내 콜 {incomingCallCount}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
         {/* 2. 상단 AI 진단 배너 */}
         <TouchableOpacity
           style={s.heroAiDiagnosticCard}
@@ -370,6 +387,13 @@ export default function HomeScreen({
 
                 {aiStep === 'question' && (
                   <View style={s.stepQuestionBox}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.photoPreviewScroll}>
+                      {capturedPhotos.map((uri, idx) => (
+                        <View key={idx} style={s.photoWrapBadge}>
+                          <Image source={{ uri }} style={s.capturedThumbImg} />
+                        </View>
+                      ))}
+                    </ScrollView>
                     <Text style={s.stepQuestionTitle}>❓ AI가 판독한 위 수리 내용이 맞습니까?</Text>
                     <View style={s.yesNoBtnRow}>
                       <TouchableOpacity style={s.btnChoiceYesSimple} onPress={() => setAiStep('final_input')}>

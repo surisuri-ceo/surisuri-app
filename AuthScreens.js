@@ -1,5 +1,6 @@
-// AuthScreens.js - 활동명 미입력 시 '취소' 없이 오직 '확인' 버튼만 뜨는 팝업 적용본
+// AuthScreens.js - 회원가입 및 활동명 확인 화면
 import React, { useState } from 'react';
+import { normalizeProviderFields, normalizeRegion, normalizeActivityRadius } from './utils/callMatching';
 import {
   StyleSheet,
   Text,
@@ -104,6 +105,8 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
   const isSocial = authMethod === '카카오' || authMethod === 'Google';
   const [realName, setRealName] = useState('서한영');
   const [nickname, setNickname] = useState('');
+  const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
+  const [nicknameDraft, setNicknameDraft] = useState('');
   const [phone, setPhone] = useState('');
   const [smsSent, setSmsSent] = useState(false);
   const [smsCode, setSmsCode] = useState('');
@@ -125,21 +128,28 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
     }
   };
 
-  // 활동명 미입력 시 '취소' 없이 오직 '확인' 버튼만 제공하여 경고 후 실명으로 통과
-  const handleSubmit = () => {
+  const handleSubmit = (confirmedNickname) => {
     if (!realName.trim()) return Alert.alert('확인', '이름(실명)을 입력해 주세요.');
     if (!isSocial && !smsVerified) return Alert.alert('인증 필요', '휴대폰 인증을 완료해 주세요.');
     if (!address.trim()) return Alert.alert('확인', '거주 지역을 입력해 주세요.');
 
-    if (!nickname.trim()) {
+    const activityName = typeof confirmedNickname === 'string' ? confirmedNickname.trim() : nickname.trim();
+    if (!activityName) {
       Alert.alert(
-        '⚠️ 활동명 확인',
-        '활동명을 입력하지 않으면 실명으로 게시됩니다.',
+        '활동명 사용 안내',
+        '활동명을 입력하지 않으셨습니다. 실명으로 활동하시겠습니까?',
         [
           {
-            text: '확인',
+            text: '예',
             onPress: () => {
               onComplete({ realName, nickname: realName, phone, address });
+            }
+          },
+          {
+            text: '아니오',
+            onPress: () => {
+              setNicknameDraft(nickname);
+              setNicknameModalVisible(true);
             }
           }
         ]
@@ -147,7 +157,20 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
       return;
     }
 
-    onComplete({ realName, nickname: nickname.trim(), phone, address });
+    onComplete({ realName, nickname: activityName, phone, address });
+  };
+
+  const handleConfirmNickname = () => {
+    const activityName = nicknameDraft.trim();
+    if (!activityName) return Alert.alert('확인', '활동명을 입력해 주세요.');
+    setNickname(activityName);
+    setNicknameModalVisible(false);
+    handleSubmit(activityName);
+  };
+
+  const handleCancelNickname = () => {
+    setNicknameModalVisible(false);
+    setNicknameDraft('');
   };
 
   return (
@@ -216,6 +239,29 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
           <Text style={s.primaryButtonText}>가입 완료하고 메인 홈으로 이동 ›</Text>
         </TouchableOpacity>
       </ScrollView>
+      <Modal visible={nicknameModalVisible} transparent animationType="fade" onRequestClose={handleCancelNickname}>
+        <View style={s.modalCenterOverlay}>
+          <View style={s.popCardModal}>
+            <Text style={s.popTitleClean}>활동명 입력</Text>
+            <TextInput
+              style={[s.inputOfficial, { marginTop: 12 }]}
+              placeholder="활동명을 입력해 주세요"
+              accessibilityLabel="활동명"
+              value={nicknameDraft}
+              onChangeText={setNicknameDraft}
+              autoFocus
+            />
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+              <TouchableOpacity style={[s.paySelectRow, { flex: 1, alignItems: 'center' }]} onPress={handleCancelNickname}>
+                <Text style={s.paySelectText}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.primaryPastelRedButton, { flex: 1, marginTop: 0 }]} onPress={handleConfirmNickname}>
+                <Text style={s.primaryButtonText}>확인</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -261,6 +307,9 @@ export function TechWizardScreen({ role, onComplete, onBack }) {
       techRadius,
       primaryField,
       secondaryFields,
+      ...normalizeProviderFields(primaryField, secondaryFields),
+      regionCode: normalizeRegion(techRegion),
+      activityRadius: normalizeActivityRadius(techRadius),
       businessNumber,
       techBio,
       planType: plan,
@@ -405,7 +454,7 @@ export function TechWizardScreen({ role, onComplete, onBack }) {
               onPress={() => setSelectedPlanType('free')}
               activeOpacity={0.8}
             >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={s.capturePlanHeader}>
                 <Text style={s.capturePlanCardTitle}>일반 파트너 (무료)</Text>
                 <View style={s.freeBadgePill}><Text style={s.freeBadgeText}>평생 무료</Text></View>
               </View>
@@ -422,7 +471,7 @@ export function TechWizardScreen({ role, onComplete, onBack }) {
               onPress={() => setSelectedPlanType('pro')}
               activeOpacity={0.8}
             >
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={s.capturePlanHeader}>
                 <Text style={s.captureProCardTitle}>
                   👑 프로 파트너 (0초 우선배차) {isCompany && '<업체전용>'}
                 </Text>
@@ -605,7 +654,8 @@ const s = StyleSheet.create({
   captureSectionHeader: { fontSize: 14, fontWeight: 'bold', color: '#111827', marginBottom: 8 },
   capturePlanCard: { backgroundColor: '#ffffff', borderWidth: 1.5, borderColor: '#e2e8f0', borderRadius: 10, padding: 12, marginBottom: 10 },
   capturePlanCardSelectedFree: { borderColor: '#f87171', backgroundColor: '#fff5f5' },
-  capturePlanCardTitle: { fontSize: 14.5, fontWeight: 'bold', color: '#111827' },
+  capturePlanHeader: { alignItems: 'flex-start', gap: 6 },
+  capturePlanCardTitle: { fontSize: 14.5, fontWeight: 'bold', color: '#111827', width: '100%', flexShrink: 1 },
   freeBadgePill: { backgroundColor: '#f1f5f9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
   freeBadgeText: { fontSize: 10.5, color: '#475569', fontWeight: 'bold' },
   capturePlanCardSub: { fontSize: 13, color: '#4b5563', marginVertical: 3 },
@@ -613,20 +663,20 @@ const s = StyleSheet.create({
 
   captureProCard: { backgroundColor: '#fffbeb', borderWidth: 1.5, borderColor: '#fed7aa', borderRadius: 10, padding: 12, marginBottom: 12 },
   captureProCardSelected: { borderColor: '#ef4444', borderWidth: 2 },
-  captureProCardTitle: { fontSize: 14.5, fontWeight: 'bold', color: '#b45309' },
+  captureProCardTitle: { fontSize: 14.5, fontWeight: 'bold', color: '#b45309', width: '100%', flexShrink: 1 },
   recommendBadgePill: { backgroundColor: '#ef4444', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
   recommendBadgeText: { fontSize: 10.5, color: '#ffffff', fontWeight: 'bold' },
 
-  durationTabRow: { flexDirection: 'row', gap: 6, marginTop: 8, marginBottom: 6 },
-  durationTabBtn: { flex: 1, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#fcd34d', borderRadius: 6, paddingVertical: 8, alignItems: 'center' },
+  durationTabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 6 },
+  durationTabBtn: { flexBasis: 140, flexGrow: 1, flexShrink: 1, minWidth: 0, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#fcd34d', borderRadius: 6, paddingVertical: 10, paddingHorizontal: 10, alignItems: 'center' },
   durationTabBtnActivePastelRed: { backgroundColor: '#f87171', borderColor: '#ef4444' },
-  durationTabPeriodText: { fontSize: 11, color: '#475569', fontWeight: 'bold' },
-  durationTabPriceText: { fontSize: 12.5, color: '#111827', fontWeight: 'bold', marginTop: 2 },
+  durationTabPeriodText: { fontSize: 11, color: '#475569', fontWeight: 'bold', alignSelf: 'stretch', textAlign: 'center' },
+  durationTabPriceText: { fontSize: 12.5, color: '#111827', fontWeight: 'bold', marginTop: 2, alignSelf: 'stretch', textAlign: 'center' },
   durationTabTextActive: { color: '#ffffff' },
 
   proBenefitBullet: { fontSize: 11.5, color: '#92400e', fontWeight: '500' },
-  captureSubmitBigBtnPastelRed: { backgroundColor: '#f87171', paddingVertical: 14, borderRadius: 8, alignItems: 'center', marginTop: 10, elevation: 2 },
-  captureSubmitBigBtnText: { color: '#ffffff', fontSize: 15, fontWeight: 'bold' },
+  captureSubmitBigBtnPastelRed: { backgroundColor: '#f87171', paddingVertical: 14, paddingHorizontal: 12, borderRadius: 8, alignItems: 'center', marginTop: 10, elevation: 2 },
+  captureSubmitBigBtnText: { color: '#ffffff', fontSize: 15, fontWeight: 'bold', alignSelf: 'stretch', textAlign: 'center' },
 
   modalCenterOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
   popCardModal: { width: '100%', backgroundColor: '#fff', borderRadius: 12, padding: 18, elevation: 8 },
