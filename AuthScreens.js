@@ -101,9 +101,10 @@ export function CustomerAuthSelectScreen({ onSelectMethod, onBack }) {
   );
 }
 
-export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
-  const isSocial = authMethod === '카카오' || authMethod === 'Google';
-  const [realName, setRealName] = useState('서한영');
+export function CustomerFormScreen({ authMethod, onComplete, onBack, isSaving = false }) {
+  const isGoogle = authMethod === 'Google';
+  const isSocial = authMethod === '카카오' || isGoogle;
+  const [realName, setRealName] = useState(isGoogle ? '' : '서한영');
   const [nickname, setNickname] = useState('');
   const [nicknameModalVisible, setNicknameModalVisible] = useState(false);
   const [nicknameDraft, setNicknameDraft] = useState('');
@@ -111,7 +112,7 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
   const [smsSent, setSmsSent] = useState(false);
   const [smsCode, setSmsCode] = useState('');
   const [smsVerified, setSmsVerified] = useState(false);
-  const [address, setAddress] = useState('광주광역시 북구 용봉동');
+  const [address, setAddress] = useState(isGoogle ? '' : '광주광역시 북구 용봉동');
 
   const handleSendSms = () => {
     if (!phone.trim() || phone.length < 10) return Alert.alert('확인', '올바른 휴대폰 번호를 입력해 주세요.');
@@ -129,9 +130,15 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
   };
 
   const handleSubmit = (confirmedNickname) => {
+    if (isSaving) return;
     if (!realName.trim()) return Alert.alert('확인', '이름(실명)을 입력해 주세요.');
     if (!isSocial && !smsVerified) return Alert.alert('인증 필요', '휴대폰 인증을 완료해 주세요.');
     if (!address.trim()) return Alert.alert('확인', '거주 지역을 입력해 주세요.');
+    if (isGoogle) {
+      if (!phone.trim()) return Alert.alert('확인', '휴대폰 번호를 입력해 주세요.');
+      onComplete({ realName, phone, address });
+      return;
+    }
 
     const activityName = typeof confirmedNickname === 'string' ? confirmedNickname.trim() : nickname.trim();
     if (!activityName) {
@@ -176,7 +183,7 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
   return (
     <View style={s.container}>
       <View style={s.headerOfficialClean}>
-        <TouchableOpacity onPress={onBack} style={s.navBackBtn}><Text style={s.navBackBtnText}>‹ 이전</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onBack} disabled={isSaving} style={s.navBackBtn}><Text style={s.navBackBtnText}>‹ 이전</Text></TouchableOpacity>
         <Text style={s.headerTitleClean}>{isSocial ? `${authMethod} 간편가입 프로필` : '휴대폰 본인인증 가입'}</Text>
         <View style={{ width: 44 }} />
       </View>
@@ -189,13 +196,29 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
         )}
 
         <Text style={s.labelOfficial}>이름 (실명) *</Text>
-        <TextInput style={s.inputOfficial} placeholder="실명을 입력해 주세요" value={realName} onChangeText={setRealName} />
+        <TextInput style={s.inputOfficial} placeholder="실명을 입력해 주세요" value={realName} onChangeText={setRealName} editable={!isSaving} />
 
-        <Text style={[s.labelOfficial, { marginTop: 12 }]}>앱 활동명 (닉네임)</Text>
-        <TextInput style={s.inputOfficial} placeholder="예: 수리고수, 용봉동주민" value={nickname} onChangeText={setNickname} />
-        <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>
-          ※ 활동명을 입력하지 않으시면 실명({realName || '홍길동'})으로 활동하게 됩니다.
-        </Text>
+        {isGoogle ? (
+          <>
+            <Text style={s.labelOfficial}>휴대폰 번호 *</Text>
+            <TextInput
+              style={s.inputOfficial}
+              placeholder="01012345678"
+              keyboardType="phone-pad"
+              value={phone}
+              onChangeText={setPhone}
+              editable={!isSaving}
+            />
+          </>
+        ) : (
+          <>
+            <Text style={[s.labelOfficial, { marginTop: 12 }]}>앱 활동명 (닉네임)</Text>
+            <TextInput style={s.inputOfficial} placeholder="예: 수리고수, 용봉동주민" value={nickname} onChangeText={setNickname} />
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 2, marginBottom: 8 }}>
+              ※ 활동명을 입력하지 않으시면 실명({realName || '홍길동'})으로 활동하게 됩니다.
+            </Text>
+          </>
+        )}
 
         {!isSocial && (
           <View>
@@ -233,10 +256,10 @@ export function CustomerFormScreen({ authMethod, onComplete, onBack }) {
         )}
 
         <Text style={s.labelOfficial}>거주 및 활동 지역 (시/군/구 동) *</Text>
-        <TextInput style={s.inputOfficial} placeholder="예: 광주광역시 북구 용봉동" value={address} onChangeText={setAddress} />
+        <TextInput style={s.inputOfficial} placeholder="예: 광주광역시 북구 용봉동" value={address} onChangeText={setAddress} editable={!isSaving} />
 
-        <TouchableOpacity style={s.primaryPastelRedButton} onPress={handleSubmit}>
-          <Text style={s.primaryButtonText}>가입 완료하고 메인 홈으로 이동 ›</Text>
+        <TouchableOpacity style={s.primaryPastelRedButton} onPress={handleSubmit} disabled={isSaving}>
+          <Text style={s.primaryButtonText}>{isSaving ? '회원정보 저장 중…' : '가입 완료하고 메인 홈으로 이동 ›'}</Text>
         </TouchableOpacity>
       </ScrollView>
       <Modal visible={nicknameModalVisible} transparent animationType="fade" onRequestClose={handleCancelNickname}>

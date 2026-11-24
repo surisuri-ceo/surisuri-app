@@ -1,8 +1,9 @@
 ﻿// index.js - 4대 공정 실시간 매칭현황 즉각 연동 완결본
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { supabase } from './supabase';
+import { createCustomerProfile, findProfile } from './utils/customerProfiles';
 import {
   StyleSheet,
   Text,
@@ -43,9 +44,118 @@ WebBrowser.maybeCompleteAuthSession();
 export default function App() {
   const [currentTab, setCurrentTab] = useState('home');
   const [activeScreen, setActiveScreen] = useState('home');
-  const [authStep, setAuthStep] = useState('landing');
+  const [authStep, setAuthStep] = useState('session_loading');
   const [chosenSocialMethod, setChosenSocialMethod] = useState('카카오');
+  const [authUserId, setAuthUserId] = useState(null);
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const googleAuthInProgress = useRef(false);
+  const profileSaveInProgress = useRef(false);
+  const [currentUser, setCurrentUser] = useState({ name: '', role: 'customer', region: '' });
+
+  const openHome = useCallback(() => {
+    setCurrentTab('home');
+    setActiveScreen('home');
+    setAuthStep(null);
+  }, []);
+
+  const openProfileHome = useCallback((profile) => {
+    const region = profile.region ?? '';
+    setCurrentUser({ ...profile, region, regionCode: normalizeRegion(region) });
+    openHome();
+  }, [openHome]);
+
+  const loadGoogleProfile = useCallback(async (userId, isActive = () => true) => {
+    let profile;
+    try {
+      const { data, error } = await findProfile(supabase, userId);
+      if (error) throw error;
+      profile = data;
+    } catch {
+      if (isActive()) setAuthStep('profile_lookup_error');
+      return;
+    }
+    if (!isActive()) return;
+
+    setAuthUserId(userId);
+    setChosenSocialMethod('Google');
+    if (profile) {
+      openProfileHome(profile);
+    } else {
+      setAuthStep('customer_form');
+    }
+  }, [openProfileHome]);
+
+  useEffect(() => {
+    let active = true;
+    const restoreSession = async () => {
+      let session;
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error || (data.session && !data.session.user?.id)) throw new Error('Invalid session');
+        session = data.session;
+      } catch {
+        if (active) setAuthStep('session_restore_error');
+        return;
+      }
+      if (!active) return;
+      if (session) {
+        await loadGoogleProfile(session.user.id, () => active);
+      } else {
+        setAuthUserId(null);
+        setAuthStep('landing');
+      }
+    };
+    restoreSession();
+    return () => { active = false; };
+  }, [loadGoogleProfile, restoreAttempt]);
+
+  const retrySession = () => {
+    setAuthStep('session_loading');
+    setRestoreAttempt(previous => previous + 1);
+  };
+
+  const handleCompleteCustomer = async (data) => {
+    if (chosenSocialMethod !== 'Google') {
+      setCurrentUser({
+        ...currentUser,
+        name: data.nickname || data.realName,
+        region: data.address,
+        regionCode: normalizeRegion(data.address),
+        role: 'customer'
+      });
+      openHome();
+      return;
+    }
+
+    if (profileSaveInProgress.current) return;
+    profileSaveInProgress.current = true;
+    setIsSavingProfile(true);
+    try {
+      try {
+        const { data: stored, error } = await supabase.auth.getSession();
+        if (error || !authUserId || stored?.session?.user?.id !== authUserId) {
+          throw new Error('Session verification failed');
+        }
+      } catch {
+        Alert.alert('Google 로그인 세션 오류', '로그인 상태를 확인할 수 없습니다. 이전 화면에서 Google로 다시 로그인해 주세요.');
+        return;
+      }
+
+      const { data: profile, error } = await createCustomerProfile(supabase, authUserId, data);
+      if (error?.code === 'MISSING_PROFILE_FIELDS') {
+        Alert.alert('회원정보 확인', '이름, 휴대폰 번호, 활동 지역을 모두 입력해 주세요.');
+        return;
+      }
+      if (error || !profile) throw error || new Error('Missing saved profile');
+      openProfileHome(profile);
+    } catch {
+      Alert.alert('회원정보 저장 실패', '회원정보를 저장하지 못했습니다. 입력 내용을 유지한 채 다시 시도할 수 있습니다.');
+    } finally {
+      profileSaveInProgress.current = false;
+      setIsSavingProfile(false);
+    }
+  };
 
   const handleSelectAuthMethod = async (method) => {
     if (googleAuthInProgress.current) return;
@@ -95,8 +205,8 @@ export default function App() {
         throw new Error('Session verification failed');
       }
 
-      setChosenSocialMethod('Google');
-      setAuthStep(previous => previous === 'customer_auth_select' ? 'customer_form' : previous);
+      setAuthStep('session_loading');
+      await loadGoogleProfile(stored.session.user.id);
     } catch {
       Alert.alert(
         stage === 'session' ? 'Google 로그인 세션 오류' : 'Google 인증 실패',
@@ -108,12 +218,6 @@ export default function App() {
       googleAuthInProgress.current = false;
     }
   };
-
-  const [currentUser, setCurrentUser] = useState({
-    name: '서한영',
-    role: 'customer',
-    region: '광주광역시 북구 용봉동'
-  });
 
   const [isEditProfileModal, setIsEditProfileModal] = useState(false);
   const [editName, setEditName] = useState(currentUser.name);
@@ -493,9 +597,9 @@ export default function App() {
                     <Ionicons name="person" size={28} color="#2563eb" />
                   </View>
                   <View style={{ flex: 1, marginLeft: 14 }}>
-                    <Text style={s.profileNameText}>{currentUser.name} 님</Text>
+                    <Text style={s.profileNameText}>{currentUser.name ? `${currentUser.name} 님` : '회원정보 미등록'}</Text>
                     <Text style={s.profileRoleText}>수리수리 AI 일반 회원 (소비자)</Text>
-                    <Text style={s.profileRegionText}>📍 {currentUser.region}</Text>
+                    <Text style={s.profileRegionText}>📍 {currentUser.region || '지역 미설정'}</Text>
                   </View>
                 </View>
 
@@ -687,6 +791,30 @@ export default function App() {
 
       {/* 3대 회원가입 모달 */}
       <Modal visible={authStep !== null} animationType="slide">
+        {['session_loading', 'session_restore_error', 'profile_lookup_error'].includes(authStep) && (
+          <View style={s.pageContainer}>
+            <View style={s.headerBar}>
+              <Text style={s.headerTitle}>회원정보</Text>
+            </View>
+            <View style={{ padding: 16, gap: 12 }}>
+              <Text style={s.boldSubText}>
+                {authStep === 'session_loading' ? '로그인 상태와 회원정보를 확인하고 있습니다.'
+                  : authStep === 'session_restore_error' ? '저장된 로그인 세션을 확인하지 못했습니다.'
+                    : '로그인됐지만 회원정보를 불러오지 못했습니다.'}
+              </Text>
+              {authStep !== 'session_loading' && (
+                <>
+                  <TouchableOpacity style={s.modalBtnConfirm} onPress={retrySession}>
+                    <Text style={s.modalBtnConfirmText}>다시 확인</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.modalBtnCancel} onPress={() => setAuthStep('customer_auth_select')}>
+                    <Text style={s.modalBtnCancelText}>로그인 화면으로</Text>
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+        )}
         {authStep === 'landing' && (
           <LandingScreen
             onSelectRole={(role) => setAuthStep(role)}
@@ -697,26 +825,20 @@ export default function App() {
         {authStep === 'customer_auth_select' && (
           <CustomerAuthSelectScreen
             onSelectMethod={handleSelectAuthMethod}
-            onBack={() => setAuthStep('landing')}
+            onBack={() => {
+              if (!googleAuthInProgress.current) setAuthStep('landing');
+            }}
           />
         )}
 
         {authStep === 'customer_form' && (
           <CustomerFormScreen
             authMethod={chosenSocialMethod}
-            onComplete={(data) => {
-              setCurrentUser({
-                ...currentUser,
-                name: data.nickname || data.realName,
-                region: data.address,
-                regionCode: normalizeRegion(data.address),
-                role: 'customer'
-              });
-              setCurrentTab('home');
-              setActiveScreen('home');
-              setAuthStep(null);
+            isSaving={isSavingProfile}
+            onComplete={handleCompleteCustomer}
+            onBack={() => {
+              if (!profileSaveInProgress.current) setAuthStep('customer_auth_select');
             }}
-            onBack={() => setAuthStep('customer_auth_select')}
           />
         )}
 
